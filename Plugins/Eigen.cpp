@@ -5,7 +5,7 @@
 # endif
 
 //#include "stdafx.h" //Use when compiling from Visual Studio
-#include <Eigen/Dense>
+#include "Eigen/Dense"
 
 using namespace Eigen;
 extern "C" {
@@ -25,10 +25,17 @@ extern "C" {
 		return (*T).cols();
 	}
 
+	EXPORT_API void SetZero(MatrixXf* T) {
+		*T = (*T).Zero((*T).rows(), (*T).cols());
+	}
+
+	EXPORT_API void SetSize(MatrixXf* T, int rows, int cols) {
+		(*T).conservativeResize(rows, cols);
+	}
+
 	EXPORT_API void Add(MatrixXf* lhs, MatrixXf* rhs, MatrixXf* out) {
 		*out = *lhs + *rhs;
 	}
-
 
 	EXPORT_API void Subtract(MatrixXf* lhs, MatrixXf* rhs, MatrixXf* out) {
 		*out = *lhs - *rhs;
@@ -68,6 +75,26 @@ extern "C" {
 
 	EXPORT_API float ColSum(MatrixXf* T, int col) {
 		return (*T).col(col).sum();
+	}
+
+	EXPORT_API float RowMean(MatrixXf* T, int row) {
+		return (*T).row(row).mean();
+	}
+
+	EXPORT_API float ColMean(MatrixXf* T, int col) {
+		return (*T).col(col).mean();
+	}
+
+	EXPORT_API float RowStd(MatrixXf* T, int row) {
+		MatrixXf diff = (*T).row(row) - (*T).row(row).mean() * MatrixXf::Ones(1, (*T).rows());
+		diff = diff.cwiseProduct(diff);
+		return std::sqrt(diff.sum() / (*T).cols());
+	}
+
+	EXPORT_API float ColStd(MatrixXf* T, int col) {
+		MatrixXf diff = (*T).col(col) - (*T).col(col).mean() * MatrixXf::Ones((*T).rows(), 1);
+		diff = diff.cwiseProduct(diff);
+		return std::sqrt(diff.sum() / (*T).rows());
 	}
 
 	EXPORT_API void Normalise(MatrixXf* T, MatrixXf* mean, MatrixXf* std, MatrixXf* out) {
@@ -119,7 +146,29 @@ extern "C" {
 		}
 	}
 
-	EXPORT_API void SetZero(MatrixXf* T) {
-		*T = (*T).Zero((*T).rows(), (*T).cols());
+	EXPORT_API void LogSoftMax(MatrixXf* T) {
+		float frac = 0.0f;
+		int rows = (*T).rows();
+		for (int i = 0; i<rows; i++) {
+			(*T)(i, 0) = std::exp((*T)(i, 0));
+			frac += (*T)(i, 0);
+		}
+		for (int i = 0; i<rows; i++) {
+			(*T)(i, 0) = std::log((*T)(i, 0) / frac);
+		}
+	}
+
+	EXPORT_API void SoftSign(MatrixXf* T) {
+		int rows = (*T).rows();
+		for (int i = 0; i<rows; i++) {
+			(*T)(i, 0) /= 1 + std::abs((*T)(i, 0));
+		}
+	}
+
+	EXPORT_API void Exp(MatrixXf* T) {
+		int rows = (*T).rows();
+		for (int i = 0; i<rows; i++) {
+			(*T)(i, 0) = std::exp((*T)(i, 0));
+		}
 	}
 }

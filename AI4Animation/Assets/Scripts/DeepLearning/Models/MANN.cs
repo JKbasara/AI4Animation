@@ -6,7 +6,7 @@ using UnityEditor;
 
 namespace DeepLearning {
 
-	public class MANN : Model {
+	public class MANN : NeuralNetwork {
 
 		public int XDim = 0;
 		public int HDim = 0;
@@ -18,62 +18,58 @@ namespace DeepLearning {
 		public int[] ControlNeurons = new int[0];
 
 		private Tensor Xmean, Xstd, Ymean, Ystd;
-		private Tensor X, Y;
 		private Tensor BX, BY;
 		private Tensor BW0, BW1, BW2, Bb0, Bb1, Bb2;
 		private Tensor[] CW;
 		private Tensor W0, W1, W2, b0, b1, b2;
 
-		public override void StoreParameters() {
-			Parameters = ScriptableObject.CreateInstance<Parameters>();
+		void OnValidate() {
+			ArrayExtensions.Resize(ref ControlNeurons, XDimBlend);
+		}
 
-			Parameters.Store(Folder+"/Xmean.bin", XDim, 1);
-			Parameters.Store(Folder+"/Xstd.bin", XDim, 1);
-			Parameters.Store(Folder+"/Ymean.bin", YDim, 1);
-			Parameters.Store(Folder+"/Ystd.bin", YDim, 1);
-
-			Parameters.Store(Folder+"/wc0_w.bin", HDimBlend, XDimBlend);
-			Parameters.Store(Folder+"/wc0_b.bin", HDimBlend, 1);
-			Parameters.Store(Folder+"/wc1_w.bin", HDimBlend, HDimBlend);
-			Parameters.Store(Folder+"/wc1_b.bin", HDimBlend, 1);
-			Parameters.Store(Folder+"/wc2_w.bin", YDimBlend, HDimBlend);
-			Parameters.Store(Folder+"/wc2_b.bin", YDimBlend, 1);
-
+		protected override void StoreParametersDerived() {
+			Parameters.Store(Folder+"/Xmean.bin", XDim, 1, "Xmean");
+			Parameters.Store(Folder+"/Xstd.bin", XDim, 1, "Xstd");
+			Parameters.Store(Folder+"/Ymean.bin", YDim, 1, "Ymean");
+			Parameters.Store(Folder+"/Ystd.bin", YDim, 1, "Ystd");
+			Parameters.Store(Folder+"/wc0_w.bin", HDimBlend, XDimBlend, "wc0_w");
+			Parameters.Store(Folder+"/wc0_b.bin", HDimBlend, 1, "wc0_b");
+			Parameters.Store(Folder+"/wc1_w.bin", HDimBlend, HDimBlend, "wc1_w");
+			Parameters.Store(Folder+"/wc1_b.bin", HDimBlend, 1, "wc1_b");
+			Parameters.Store(Folder+"/wc2_w.bin", YDimBlend, HDimBlend, "wc2_w");
+			Parameters.Store(Folder+"/wc2_b.bin", YDimBlend, 1, "wc2_b");
 			for(int i=0; i<YDimBlend; i++) {
-				Parameters.Store(Folder+"/cp0_a"+i.ToString("D1")+".bin", HDim, XDim);
-				Parameters.Store(Folder+"/cp0_b"+i.ToString("D1")+".bin", HDim, 1);
-				Parameters.Store(Folder+"/cp1_a"+i.ToString("D1")+".bin", HDim, HDim);
-				Parameters.Store(Folder+"/cp1_b"+i.ToString("D1")+".bin", HDim, 1);
-				Parameters.Store(Folder+"/cp2_a"+i.ToString("D1")+".bin", YDim, HDim);
-				Parameters.Store(Folder+"/cp2_b"+i.ToString("D1")+".bin", YDim, 1);
+				Parameters.Store(Folder+"/cp0_a"+i.ToString("D1")+".bin", HDim, XDim, "cp0_a"+i.ToString("D1"));
+				Parameters.Store(Folder+"/cp0_b"+i.ToString("D1")+".bin", HDim, 1, "cp0_b"+i.ToString("D1"));
+				Parameters.Store(Folder+"/cp1_a"+i.ToString("D1")+".bin", HDim, HDim, "cp1_a"+i.ToString("D1"));
+				Parameters.Store(Folder+"/cp1_b"+i.ToString("D1")+".bin", HDim, 1, "cp1_b"+i.ToString("D1"));
+				Parameters.Store(Folder+"/cp2_a"+i.ToString("D1")+".bin", YDim, HDim, "cp2_a"+i.ToString("D1"));
+				Parameters.Store(Folder+"/cp2_b"+i.ToString("D1")+".bin", YDim, 1, "cp2_b"+i.ToString("D1"));
 			}
 		}
 
-		public override void LoadParameters() {
-			if(Parameters == null) {
-				Debug.Log("Building MANN failed because no parameters are available.");
-				return;
+		protected override void LoadParametersDerived() {
+			Xmean = CreateTensor(Parameters.Load("Xmean"));
+			Xstd = CreateTensor(Parameters.Load("Xstd"));
+			Ymean = CreateTensor(Parameters.Load("Ymean"));
+			Ystd = CreateTensor(Parameters.Load("Ystd"));
+			BW0 = CreateTensor(Parameters.Load("wc0_w"));
+			Bb0 = CreateTensor(Parameters.Load("wc0_b"));
+			BW1 = CreateTensor(Parameters.Load("wc1_w"));
+			Bb1 = CreateTensor(Parameters.Load("wc1_b"));
+			BW2 = CreateTensor(Parameters.Load("wc2_w"));
+			Bb2 = CreateTensor(Parameters.Load("wc2_b"));
+			CW = new Tensor[6*YDimBlend];
+			for(int i=0; i<YDimBlend; i++) {
+				CW[6*i+0] = CreateTensor(Parameters.Load("cp0_a"+i.ToString("D1")));
+				CW[6*i+1] = CreateTensor(Parameters.Load("cp0_b"+i.ToString("D1")));
+				CW[6*i+2] = CreateTensor(Parameters.Load("cp1_a"+i.ToString("D1")));
+				CW[6*i+3] = CreateTensor(Parameters.Load("cp1_b"+i.ToString("D1")));
+				CW[6*i+4] = CreateTensor(Parameters.Load("cp2_a"+i.ToString("D1")));
+				CW[6*i+5] = CreateTensor(Parameters.Load("cp2_b"+i.ToString("D1")));
 			}
-			Xmean = CreateTensor(Parameters.Load(0), "Xmean");
-			Xstd = CreateTensor(Parameters.Load(1), "Xstd");
-			Ymean = CreateTensor(Parameters.Load(2), "Ymean");
-			Ystd = CreateTensor(Parameters.Load(3), "Ystd");
-
-			BW0 = CreateTensor(Parameters.Load(4), "BW0");
-			Bb0 = CreateTensor(Parameters.Load(5), "Bb0");
-			BW1 = CreateTensor(Parameters.Load(6), "BW1");
-			Bb1 = CreateTensor(Parameters.Load(7), "Bb1");
-			BW2 = CreateTensor(Parameters.Load(8), "BW2");
-			Bb2 = CreateTensor(Parameters.Load(9), "Bb2");
-
-			CW = new Tensor[YDimBlend*6];
-			for(int i=0; i<YDimBlend*6; i++) {
-				CW[i] = CreateTensor(Parameters.Load(10+i), "CW"+i);
-			}
-			
 			X = CreateTensor(XDim, 1, "X");
 			Y = CreateTensor(YDim, 1, "Y");
-
 			BX = CreateTensor(XDimBlend, 1, "BX");
 			BY = CreateTensor(YDimBlend, 1, "BY");
 			W0 = CreateTensor(HDim, XDim, "W0");
@@ -118,39 +114,6 @@ namespace DeepLearning {
 			//Renormalise Output
 			Renormalise(Y, Ymean, Ystd, Y);
 		}
-
-		public override void SetInput(int index, float value) {
-			X.SetValue(index, 0, value);
-		}
-
-		public override float GetOutput(int index) {
-			return Y.GetValue(index, 0);
-		}
-
-		#if UNITY_EDITOR
-		public override void Inspector() {
-			using(new EditorGUILayout.VerticalScope ("Box")) {
-				Folder = EditorGUILayout.TextField("Folder", Folder);
-				EditorGUILayout.BeginHorizontal();
-				if(GUILayout.Button("Store Parameters")) {
-					StoreParameters();
-				}
-				Parameters = (Parameters)EditorGUILayout.ObjectField(Parameters, typeof(Parameters), true);
-				EditorGUILayout.EndHorizontal();
-				
-				XDim = EditorGUILayout.IntField("XDim", XDim);
-				HDim = EditorGUILayout.IntField("HDim", HDim);
-				YDim = EditorGUILayout.IntField("YDim", YDim);
-				XDimBlend = EditorGUILayout.IntField("XDimBlend", XDimBlend);
-				HDimBlend = EditorGUILayout.IntField("HDimBlend", HDimBlend);
-				YDimBlend = EditorGUILayout.IntField("YDimBlend", YDimBlend);
-				Array.Resize(ref ControlNeurons, EditorGUILayout.IntField("Control Neurons", ControlNeurons.Length));
-				for(int i=0; i<ControlNeurons.Length; i++) {
-					ControlNeurons[i] = EditorGUILayout.IntField("Neuron " + (i+1), ControlNeurons[i]);
-				}
-			}
-		}
-		#endif
 		
 	}
 

@@ -1,11 +1,12 @@
 ﻿using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine.EventSystems;
 
 [ExecuteInEditMode]
 public class CameraController : MonoBehaviour {
 
-	public enum MODE {Follow, LookAt, FreeView}
+	public enum MODE {Follow, LookAt, FreeView, FixedView}
 
 	public bool ShowGUI = true;
 
@@ -16,7 +17,7 @@ public class CameraController : MonoBehaviour {
 	[Range(0f, 1f)] public float Damping = 0.975f;
 	[Range(-180f, 180f)] public float Yaw = 0f;
 	[Range(-45f, 45f)] public float Pitch = 0f;
-	[Range(0f, 10f)] public float FOV = 1f;
+	[Range(0f, 10f)] public float FOV = 1.5f;
 	public float MinHeight = 0.5f;
 
 	private float Velocity = 5f;
@@ -31,6 +32,16 @@ public class CameraController : MonoBehaviour {
 	private Vector3 TargetPosition;
 	private Quaternion TargetRotation;
 
+	private GUIStyle ButtonStyle;
+	private GUIStyle SliderStyle;
+	private GUIStyle ThumbStyle;
+	private GUIStyle FontStyle;
+
+	private Vector3 LastTargetPosition;
+	private List<Vector3> TargetVelocities;
+	private int TargetSmoothing = 50;
+	private float MaxVelocity = 0.1f;
+
 	void Awake() {
 		TargetPosition = transform.position;
 		TargetRotation = transform.rotation;
@@ -38,6 +49,7 @@ public class CameraController : MonoBehaviour {
 
 	void Start() {
 		SetMode(Mode);
+		TargetVelocities = new List<Vector3>();
 	}
 
 	void Update() {
@@ -48,6 +60,12 @@ public class CameraController : MonoBehaviour {
 		if(Target == null) {
 			return;
 		}
+
+		while(TargetVelocities.Count >= TargetSmoothing) {
+			TargetVelocities.RemoveAt(0);
+		}
+		TargetVelocities.Add(Vector3.ClampMagnitude(Target.position - LastTargetPosition, MaxVelocity));
+		LastTargetPosition = Target.position;
 
 		if(Mode == MODE.Follow) {
 			UpdateFollowCamera();
@@ -70,12 +88,20 @@ public class CameraController : MonoBehaviour {
 
 			LastMousePosition = MousePosition;
 		}
+		if(Mode == MODE.FixedView) {
+			UpdateFixedView();
+		}
 	}
 
 	void LateUpdate() {
+		if(!Application.isPlaying) {
+			return;
+		}
+		
 		//Apply Transformation
-		transform.position = Vector3.Lerp(transform.position, TargetPosition, 1f-GetDamping());
-		transform.rotation = Quaternion.Lerp(transform.rotation, TargetRotation, 1f-GetDamping());
+		float damping = Mode == MODE.FreeView ? 1f : 1f - GetDamping();
+		transform.position = Vector3.Lerp(transform.position, TargetPosition, damping);
+		transform.rotation = Quaternion.Lerp(transform.rotation, TargetRotation, damping);
 
 		//Correct Height
 		float height = transform.position.y - Target.position.y;
@@ -83,7 +109,41 @@ public class CameraController : MonoBehaviour {
 			transform.position += new Vector3(0f, MinHeight-height, 0f);
 		}
 	}
-	
+
+	private GUIStyle GetButtonStyle() {
+		if(ButtonStyle == null) {
+			ButtonStyle = new GUIStyle(GUI.skin.button);
+			ButtonStyle.font = (Font)Resources.Load("Fonts/Coolvetica");
+			ButtonStyle.normal.textColor = Color.white;
+			ButtonStyle.alignment = TextAnchor.MiddleCenter;
+		}
+		return ButtonStyle;
+	}
+
+	private GUIStyle GetSliderStyle() {
+		if(SliderStyle == null) {
+			SliderStyle = new GUIStyle(GUI.skin.horizontalSlider);
+		}
+		return SliderStyle;
+	}
+
+	private GUIStyle GetThumbStyle() {
+		if(ThumbStyle == null) {
+			ThumbStyle = new GUIStyle(GUI.skin.horizontalSliderThumb);
+		}
+		return ThumbStyle;
+	}
+
+	private GUIStyle GetFontStyle() {
+		if(FontStyle == null) {
+			FontStyle = new GUIStyle();
+			FontStyle.font = (Font)Resources.Load("Fonts/Coolvetica");
+			FontStyle.normal.textColor = Color.white;
+			FontStyle.alignment = TextAnchor.MiddleLeft;
+		}
+		return FontStyle;
+	}
+
 	private void UpdateFollowCamera() {
 		Vector3 currentPosition = transform.position;
 		Quaternion currentRotation = transform.rotation;
@@ -99,6 +159,7 @@ public class CameraController : MonoBehaviour {
 
 		TargetPosition = transform.position;
 		TargetRotation = transform.rotation;
+		
 		transform.position = currentPosition;
 		transform.rotation = currentRotation;
 	}
@@ -133,6 +194,7 @@ public class CameraController : MonoBehaviour {
 
 		TargetPosition = transform.position;
 		TargetRotation = transform.rotation;
+
 		transform.position = currentPosition;
 		transform.rotation = currentRotation;
 	}
@@ -171,6 +233,28 @@ public class CameraController : MonoBehaviour {
 
 		TargetPosition = transform.position;
 		TargetRotation = transform.rotation;
+
+		transform.position = currentPosition;
+		transform.rotation = currentRotation;
+	}
+
+	private void UpdateFixedView() {
+		Vector3 currentPosition = transform.position;
+		Quaternion currentRotation = transform.rotation;
+
+		float ahead = 1.25f;
+		Vector3 bias = new Vector3(40f, 40f, 40f);
+		Vector3 velocity = Vector3.zero;
+		for(int i=0; i<TargetVelocities.Count; i++) {
+			velocity += TargetVelocities[i];
+		}
+		velocity /= TargetVelocities.Count;
+		transform.position = Target.position + FOV*ahead*SelfOffset + Vector3.Scale(bias, velocity);
+		transform.LookAt(Target.position + TargetOffset + ahead*Vector3.Scale(bias, velocity));
+
+		TargetPosition = transform.position;
+		TargetRotation = transform.rotation;
+		
 		transform.position = currentPosition;
 		transform.rotation = currentRotation;
 	}
@@ -219,26 +303,40 @@ public class CameraController : MonoBehaviour {
 		if(!ShowGUI) {
 			return;
 		}
-		GUI.color = UltiDraw.Mustard;
-		GUI.backgroundColor = UltiDraw.Black;
-		if(GUI.Button(Utility.GetGUIRect(0.85f, 0.1f, 0.1f, 0.04f), "Follow")) {
+		GetButtonStyle().fontSize = Mathf.RoundToInt(0.01f * Screen.width);
+		GetSliderStyle().fixedHeight = Mathf.RoundToInt(0.01f * Screen.width);
+		GetThumbStyle().fixedHeight = Mathf.RoundToInt(0.01f * Screen.width);
+		GetThumbStyle().fixedWidth = Mathf.RoundToInt(0.01f * Screen.width);
+		GetFontStyle().fixedHeight = Mathf.RoundToInt(0.01f * Screen.width);
+		GetFontStyle().fontSize = Mathf.RoundToInt(0.01f * Screen.width);
+		GUI.color = UltiDraw.White;
+		GUI.backgroundColor = Mode == MODE.Follow ? UltiDraw.Mustard : UltiDraw.Black;
+		if(GUI.Button(Utility.GetGUIRect(0.85f, 0.05f, 0.1f, 0.04f), "Follow", GetButtonStyle())) {
 			SetMode(MODE.Follow);
 		}
-		if(GUI.Button(Utility.GetGUIRect(0.85f, 0.15f, 0.1f, 0.04f), "Look At")) {
+		GUI.backgroundColor = Mode == MODE.LookAt ? UltiDraw.Mustard : UltiDraw.Black;
+		if(GUI.Button(Utility.GetGUIRect(0.85f, 0.1f, 0.1f, 0.04f), "Look At", GetButtonStyle())) {
 			SetMode(MODE.LookAt);
 		}
-		if(GUI.Button(Utility.GetGUIRect(0.85f, 0.2f, 0.1f, 0.04f), "Free View")) {
+		GUI.backgroundColor = Mode == MODE.FreeView ? UltiDraw.Mustard : UltiDraw.Black;
+		if(GUI.Button(Utility.GetGUIRect(0.85f, 0.15f, 0.1f, 0.04f), "Free View", GetButtonStyle())) {
 			SetMode(MODE.FreeView);
 		}
+		GUI.backgroundColor = Mode == MODE.FixedView ? UltiDraw.Mustard : UltiDraw.Black;
+		if(GUI.Button(Utility.GetGUIRect(0.85f, 0.2f, 0.1f, 0.04f), "Fixed View", GetButtonStyle())) {
+			SetMode(MODE.FixedView);
+		}
 		GUI.color = Color.black;
-		Yaw = Mathf.RoundToInt(GUI.HorizontalSlider(Utility.GetGUIRect(0.85f, 0.25f, 0.1f, 0.025f), Yaw, -180f, 180f));
-		GUI.Label(Utility.GetGUIRect(0.96f, 0.25f, 0.04f, 0.025f), "Yaw" + "(" + Yaw + ")");
-		Pitch = Mathf.RoundToInt(GUI.HorizontalSlider(Utility.GetGUIRect(0.85f, 0.275f, 0.1f, 0.025f), Pitch, -45f, 45f));
-		GUI.Label(Utility.GetGUIRect(0.96f, 0.275f, 0.04f, 0.025f), "Pitch" + "(" + Pitch + ")");
-		FOV = GUI.HorizontalSlider(Utility.GetGUIRect(0.85f, 0.3f, 0.1f, 0.025f), FOV, 0f, 10f);
-		GUI.Label(Utility.GetGUIRect(0.96f, 0.3f, 0.04f, 0.025f), "FOV" + "(" + FOV + ")");
-		Damping = GUI.HorizontalSlider(Utility.GetGUIRect(0.85f, 0.325f, 0.1f, 0.025f), Damping, 0f, 1f);
-		GUI.Label(Utility.GetGUIRect(0.96f, 0.325f, 0.04f, 0.025f), "Damping" + "(" + Damping + ")");
+		FOV = GUI.HorizontalSlider(Utility.GetGUIRect(0.85f, 0.25f, 0.1f, 0.025f), FOV, 0f, 10f, GetSliderStyle(), GetThumbStyle());
+		GUI.Label(Utility.GetGUIRect(0.96f, 0.25f, 0.04f, 0.025f), "FOV", GetFontStyle());
+		if(Mode == MODE.Follow) {
+			Yaw = Mathf.RoundToInt(GUI.HorizontalSlider(Utility.GetGUIRect(0.85f, 0.275f, 0.1f, 0.025f), Yaw, -180f, 180f, GetSliderStyle(), GetThumbStyle()));
+			GUI.Label(Utility.GetGUIRect(0.96f, 0.275f, 0.04f, 0.025f), "Yaw", GetFontStyle());
+			Pitch = Mathf.RoundToInt(GUI.HorizontalSlider(Utility.GetGUIRect(0.85f, 0.3f, 0.1f, 0.025f), Pitch, -45f, 45f, GetSliderStyle(), GetThumbStyle()));
+			GUI.Label(Utility.GetGUIRect(0.96f, 0.3f, 0.04f, 0.025f), "Pitch", GetFontStyle());
+			Damping = GUI.HorizontalSlider(Utility.GetGUIRect(0.85f, 0.325f, 0.1f, 0.025f), Damping, 0f, 1f, GetSliderStyle(), GetThumbStyle());
+			GUI.Label(Utility.GetGUIRect(0.96f, 0.325f, 0.04f, 0.025f), "Damping", GetFontStyle());
+		}
 	}
 
 	/*
